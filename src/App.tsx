@@ -1,10 +1,14 @@
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useState } from "react";
 import SerialConnectionPanel from "./components/common/serial-connection-panel";
 import MotorControlPanel from "./components/common/motor-control-panel";
 import DataLogPanel from "./components/common/data-log-panel";
 import StatusDisplay from "./components/common/status-display";
 import IMUSensorDisplay from "./components/common/imu-sensor-display";
 import GPSLoggerDisplay from "./components/common/gps-logger-display";
+
+import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
+
 export interface SerialPort {
   name: string;
   baudRate: number;
@@ -26,14 +30,54 @@ export default function Home() {
     gyroX: 0,
     gyroY: 0,
     gyroZ: 0,
-    magX: 0,
-    magY: 0,
-    magZ: 0,
   });
 
   // GPS data
   const [gpsLogs, setGpsLogs] = useState<any[]>([]);
   const [isLogging, setIsLogging] = useState(false);
+
+  useEffect(() => {
+    let unlistenIMU: any;
+    let unlistenBattery: any;
+    let unlistenGPS: any;
+
+    async function setupRealtimeData() {
+      // 1. Lắng nghe IMU
+      unlistenIMU = await listen("imu-data", (event: any) => {
+        console.log("IMU Data:", event.payload);
+        setImuData(event.payload);
+      });
+
+      // 2. Lắng nghe Battery
+      unlistenBattery = await listen("battery-data", (event: any) => {
+        console.log("battery Data:", event.payload);
+
+        setBatteryVoltage(event.payload);
+      });
+
+      // 3. Lắng nghe GPS & Add Log
+      unlistenGPS = await listen("gps-data", (event: any) => {
+        console.log("GPS Data:", event.payload);
+        const { lat, lon, sats } = event.payload;
+        if (isLogging) {
+          addGPSLog(lat, lon, sats);
+        }
+      });
+
+      await invoke("start_telemetry_stream");
+      console.log("start_telemetry_stream ");
+    }
+    console.log("isConnected ", isConnected);
+    if (isConnected) {
+      setupRealtimeData();
+    }
+
+    return () => {
+      if (unlistenIMU) unlistenIMU();
+      if (unlistenBattery) unlistenBattery();
+      if (unlistenGPS) unlistenGPS();
+    };
+  }, [isConnected, isLogging]);
 
   // Connection handler
   const handleConnect = async (port: SerialPort, baud: number) => {
@@ -42,7 +86,7 @@ export default function Home() {
       setBaudRate(baud);
       setIsConnected(true);
       // Simulate data reading from serial port
-      startDataSimulation();
+      // startDataSimulation();
     } catch (error) {
       console.error("Failed to connect:", error);
     }
@@ -72,9 +116,6 @@ export default function Home() {
         gyroX: Math.sin(time * 2) * 10,
         gyroY: Math.cos(time * 2) * 10,
         gyroZ: Math.sin(time * 1.5) * 5,
-        magX: Math.sin(time * 0.2) * 50,
-        magY: Math.cos(time * 0.2) * 50,
-        magZ: 40 + Math.sin(time * 0.1) * 10,
       });
     }, 100);
 

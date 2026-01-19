@@ -1,10 +1,115 @@
 use std::sync::{Arc, Mutex};
 
 use mavlink::common::MavMessage;
-use tauri::State;
-
+use std::time::Duration;
+use tauri::{Emitter, State, Window};
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 struct DroneConnection(Arc<Mutex<Option<Box<dyn mavlink::MavConnection<MavMessage> + Send>>>>);
+
+#[tauri::command]
+async fn start_telemetry_stream(
+    window: Window,
+    state: State<'_, DroneConnection>,
+) -> Result<(), String> {
+    println!("Start read metric stream");
+    let state_clone = state.0.clone();
+
+    {
+        let mut lock = state_clone.lock().unwrap();
+        if let Some(ref conn) = *lock {
+            let header = mavlink::MavHeader::default();
+            let request =
+                MavMessage::REQUEST_DATA_STREAM(mavlink::common::REQUEST_DATA_STREAM_DATA {
+                    target_system: 1,
+                    target_component: 1,
+                    req_stream_id: 0,     // 0 = ALL STREAMS
+                    req_message_rate: 10, // 10Hz
+                    start_stop: 1,
+                });
+            let _ = conn.send(&header, &request);
+            println!("[SYSTEM] Sent REQUEST_DATA_STREAM");
+        }
+    }
+
+    std::thread::spawn(move || {
+        println!("[THREAD] Reading thread running...");
+        loop {
+            let msg_result = {
+                let mut lock = state_clone.lock().unwrap();
+                lock.as_mut().map(|conn| conn.recv())
+            };
+
+            if let Some(Ok((_header, msg))) = msg_result {
+                match msg {
+                    MavMessage::ATTITUDE(data) => {
+                        let to_deg = 180.0 / std::f32::consts::PI;
+                        let _ = window.emit(
+                            "imu-data",
+                            serde_json::json!({
+                                "accelX": 0,
+                                "accelY": 0,
+                                "accelZ": 0,
+                                "gyroX": data.roll * to_deg,
+                                "gyroY": data.pitch * to_deg,
+                                "gyroZ": data.yaw * to_deg,
+                            }),
+                        );
+                    }
+
+                    MavMessage::RAW_IMU(data) => {
+                        let _ = window.emit(
+                            "imu-data",
+                            serde_json::json!({
+                                "accelX": data.xacc as f32 / 1000.0,
+                                "accelY": data.yacc as f32 / 1000.0,
+                                "accelZ": data.zacc as f32 / 1000.0,
+                                "gyroX": data.xgyro as f32 * 0.001,
+                                "gyroY": data.ygyro as f32 * 0.001,
+                                "gyroZ": data.zgyro as f32 * 0.001,
+                            }),
+                        );
+                    }
+
+                    MavMessage::VFR_HUD(data) => {
+                        let _ = window.emit(
+                            "hud-data",
+                            serde_json::json!({
+                                "alt": data.alt,
+                                "speed": data.groundspeed
+                            }),
+                        );
+                    }
+
+                    MavMessage::SYS_STATUS(data) => {
+                        let _ = window.emit("battery-data", data.voltage_battery as f32 / 1000.0);
+                    }
+
+                    MavMessage::GPS_RAW_INT(data) => {
+                        let _ = window.emit(
+                            "gps-data",
+                            serde_json::json!({
+                                "lat": data.lat as f64 / 1e7,
+                                "lon": data.lon as f64 / 1e7,
+                                "alt": data.alt as f32 / 1000.0,
+                                "sats": data.satellites_visible
+                            }),
+                        );
+                    }
+
+                    MavMessage::HEARTBEAT(_) => {
+                        let _ = window.emit("status", "Drone Connected (Heartbeat)");
+                    }
+
+                    _ => {}
+                }
+            }
+
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    });
+
+    Ok(())
+}
 
 #[tauri::command]
 async fn connect_to_drone(
@@ -27,6 +132,18 @@ async fn connect_to_drone(
         Ok(mavconn) => {
             *lock = Some(mavconn);
             println!("[RUST] Connected to {}", connection_string);
+            let header = mavlink::MavHeader::default();
+
+            let request =
+                MavMessage::REQUEST_DATA_STREAM(mavlink::common::REQUEST_DATA_STREAM_DATA {
+                    req_stream_id: 0,
+                    req_message_rate: 10,
+                    target_system: 1,
+                    target_component: 1,
+                    start_stop: 0,
+                });
+
+            let _ = lock.as_ref().unwrap().send(&header, &request);
             Ok(format!("Connected to {}", port))
         }
         Err(e) => Err(format!("Mavlink Connect Error: {:?}", e)),
@@ -68,7 +185,8 @@ pub fn run() {
             greet,
             get_port_available,
             connect_to_drone,
-            disconnect_drone
+            disconnect_drone,
+            start_telemetry_stream
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

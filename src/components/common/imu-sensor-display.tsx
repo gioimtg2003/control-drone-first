@@ -67,9 +67,6 @@ export default function IMUSensorDisplay({ imuData }: IMUSensorDisplayProps) {
         ...prev,
         {
           time: timestamp,
-          x: parseFloat(imuData.magX.toFixed(2)),
-          y: parseFloat(imuData.magY.toFixed(2)),
-          z: parseFloat(imuData.magZ.toFixed(2)),
         },
       ];
       return updated.slice(-30);
