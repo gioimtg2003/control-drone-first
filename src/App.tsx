@@ -6,7 +6,7 @@ import StatusDisplay from "./components/common/status-display";
 import IMUSensorDisplay from "./components/common/imu-sensor-display";
 import GPSLoggerDisplay from "./components/common/gps-logger-display";
 
-import { listen } from "@tauri-apps/api/event";
+import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 
 export interface SerialPort {
@@ -30,6 +30,9 @@ export default function Home() {
     gyroX: 0,
     gyroY: 0,
     gyroZ: 0,
+    magX: 0,
+    magY: 0,
+    magZ: 0,
   });
 
   // GPS data
@@ -37,37 +40,35 @@ export default function Home() {
   const [isLogging, setIsLogging] = useState(false);
 
   useEffect(() => {
-    let unlistenIMU: any;
-    let unlistenBattery: any;
-    let unlistenGPS: any;
+    let unlistenIMU: UnlistenFn;
+    let unlistenBattery: UnlistenFn;
+    let unlistenGPS: UnlistenFn;
+    let unlistenTemperature: UnlistenFn;
 
     async function setupRealtimeData() {
-      // 1. Lắng nghe IMU
       unlistenIMU = await listen("imu-data", (event: any) => {
-        console.log("IMU Data:", event.payload);
         setImuData(event.payload);
       });
 
-      // 2. Lắng nghe Battery
       unlistenBattery = await listen("battery-data", (event: any) => {
-        console.log("battery Data:", event.payload);
-
         setBatteryVoltage(event.payload);
       });
 
-      // 3. Lắng nghe GPS & Add Log
       unlistenGPS = await listen("gps-data", (event: any) => {
-        console.log("GPS Data:", event.payload);
         const { lat, lon, sats } = event.payload;
         if (isLogging) {
           addGPSLog(lat, lon, sats);
         }
       });
+      unlistenTemperature = await listen<{ temperature?: number }>(
+        "temperature-data",
+        (event) => {
+          setTemperature(event.payload?.temperature ?? 0);
+        },
+      );
 
       await invoke("start_telemetry_stream");
-      console.log("start_telemetry_stream ");
     }
-    console.log("isConnected ", isConnected);
     if (isConnected) {
       setupRealtimeData();
     }
@@ -76,6 +77,7 @@ export default function Home() {
       if (unlistenIMU) unlistenIMU();
       if (unlistenBattery) unlistenBattery();
       if (unlistenGPS) unlistenGPS();
+      if (unlistenTemperature) unlistenTemperature();
     };
   }, [isConnected, isLogging]);
 
@@ -96,30 +98,6 @@ export default function Home() {
     setIsConnected(false);
     setSelectedPort(null);
     setReader(null);
-  };
-
-  // Simulate real-time data from drone
-  const startDataSimulation = () => {
-    const interval = setInterval(() => {
-      // Simulate battery voltage decay
-      setBatteryVoltage((prev) => Math.max(11.5, prev - 0.001));
-
-      // Simulate temperature fluctuation
-      setTemperature((prev) => prev + (Math.random() - 0.5) * 0.5);
-
-      // Simulate IMU sensor data (sine wave patterns)
-      const time = Date.now() / 1000;
-      setImuData({
-        accelX: Math.sin(time * 0.5) * 2,
-        accelY: Math.cos(time * 0.5) * 2,
-        accelZ: 9.8 + Math.sin(time * 0.3) * 0.5,
-        gyroX: Math.sin(time * 2) * 10,
-        gyroY: Math.cos(time * 2) * 10,
-        gyroZ: Math.sin(time * 1.5) * 5,
-      });
-    }, 100);
-
-    return () => clearInterval(interval);
   };
 
   const addGPSLog = (lat: number, lon: number, accuracy: number) => {

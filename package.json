@@ -17,14 +17,17 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.562.0",
+    "mapbox-gl": "^3.18.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "react-map-gl": "^8.1.0",
     "recharts": "^3.6.0",
     "tailwind-merge": "^3.4.0",
     "tailwindcss": "^4.1.18"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
+    "@types/mapbox-gl": "^3.4.1",
     "@types/node": "^25.0.9",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",

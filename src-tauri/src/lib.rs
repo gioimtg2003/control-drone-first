@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use mavlink::common::MavMessage;
+use mavlink::common::{MavMessage, REQUEST_DATA_STREAM_DATA};
 use std::time::Duration;
 use tauri::{Emitter, State, Window};
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
@@ -15,17 +15,16 @@ async fn start_telemetry_stream(
     let state_clone = state.0.clone();
 
     {
-        let mut lock = state_clone.lock().unwrap();
+        let lock = state_clone.lock().unwrap();
         if let Some(ref conn) = *lock {
             let header = mavlink::MavHeader::default();
-            let request =
-                MavMessage::REQUEST_DATA_STREAM(mavlink::common::REQUEST_DATA_STREAM_DATA {
-                    target_system: 1,
-                    target_component: 1,
-                    req_stream_id: 0,     // 0 = ALL STREAMS
-                    req_message_rate: 10, // 10Hz
-                    start_stop: 1,
-                });
+            let request = MavMessage::REQUEST_DATA_STREAM(REQUEST_DATA_STREAM_DATA {
+                target_system: 1,
+                target_component: 1,
+                req_stream_id: 0,     // 0 = ALL STREAMS
+                req_message_rate: 10, // 10Hz
+                start_stop: 1,
+            });
             let _ = conn.send(&header, &request);
             println!("[SYSTEM] Sent REQUEST_DATA_STREAM");
         }
@@ -66,6 +65,9 @@ async fn start_telemetry_stream(
                                 "gyroX": data.xgyro as f32 * 0.001,
                                 "gyroY": data.ygyro as f32 * 0.001,
                                 "gyroZ": data.zgyro as f32 * 0.001,
+                                "magX": data.xmag as f32 / 1000.0,
+                                "magY": data.ymag as f32 / 1000.0,
+                                "magZ": data.zmag as f32 / 1000.0,
                             }),
                         );
                     }
@@ -98,6 +100,16 @@ async fn start_telemetry_stream(
 
                     MavMessage::HEARTBEAT(_) => {
                         let _ = window.emit("status", "Drone Connected (Heartbeat)");
+                    }
+
+                    MavMessage::RAW_PRESSURE(data) => {
+                        let _ = window.emit(
+                            "pressure-data",
+                            serde_json::json!({
+                                "pressure": data.press_abs as f32 / 1000.0,
+                                "temperature": data.temperature as f32 / 1000.0
+                            }),
+                        );
                     }
 
                     _ => {}

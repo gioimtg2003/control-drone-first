@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import "mapbox-gl/dist/mapbox-gl.css";
+import Map, { MapRef } from "react-map-gl/mapbox";
 
 interface GPSLog {
   id: number;
@@ -15,12 +17,14 @@ interface GPSLoggerDisplayProps {
   onAddLog: (lat: number, lon: number, accuracy: number) => void;
 }
 
+const DEFAULT_MAP_ZOOM = 15;
+
 export default function GPSLoggerDisplay({
   gpsLogs,
   onAddLog,
 }: GPSLoggerDisplayProps) {
   const [activeTab, setActiveTab] = useState<"table" | "map">("table");
-  const [mapZoom, setMapZoom] = useState(15);
+  const [mapZoom, setMapZoom] = useState(DEFAULT_MAP_ZOOM);
 
   // Simulate GPS position (moving path)
   const baseLat = 21.0285;
@@ -35,15 +39,7 @@ export default function GPSLoggerDisplay({
     );
   };
 
-  // Calculate map center
-  const getMapCenter = () => {
-    if (gpsLogs.length === 0) return { lat: baseLat, lon: baseLon };
-    const lastLog = gpsLogs[gpsLogs.length - 1];
-    return { lat: lastLog.latitude, lon: lastLog.longitude };
-  };
-
-  const center = getMapCenter();
-  const mapUrl = `https://maps.googleapis.com/maps/api/staticmap?center=${center.lat},${center.lon}&zoom=${mapZoom}&size=600x400&key=AIzaSyDummyKey&markers=color:blue%7C${gpsLogs.map((log) => `${log.latitude},${log.longitude}`).join("|")}`;
+  const mapRef = useRef<MapRef>(null);
 
   return (
     <Card className="border-border bg-card">
@@ -142,10 +138,13 @@ export default function GPSLoggerDisplay({
               <label className="text-sm text-muted-foreground">Zoom:</label>
               <input
                 type="range"
-                min="5"
-                max="20"
+                min="8"
+                max="18"
                 value={mapZoom}
-                onChange={(e) => setMapZoom(Number(e.target.value))}
+                onChange={(e) => {
+                  setMapZoom(Number(e.target.value));
+                  mapRef.current?.zoomTo(Number(e.target.value));
+                }}
                 className="flex-1 accent-primary"
               />
               <span className="text-sm font-mono">{mapZoom}x</span>
@@ -153,30 +152,20 @@ export default function GPSLoggerDisplay({
 
             {/* Simple ASCII Map Visualization */}
             <div className="border border-border rounded-md p-4 bg-secondary aspect-video flex items-center justify-center">
-              <div className="text-center">
-                <div className="text-muted-foreground mb-2">
-                  <p className="text-sm">GPS Map Visualization</p>
-                  <p className="text-xs mt-2">
-                    Center: {center.lat.toFixed(6)}, {center.lon.toFixed(6)}
-                  </p>
-                </div>
-
-                {gpsLogs.length > 0 ? (
-                  <div className="mt-4 p-3 bg-card rounded text-xs font-mono">
-                    <p className="text-primary">
-                      Total Points: {gpsLogs.length}
-                    </p>
-                    <p className="text-accent mt-1">
-                      Latest: {gpsLogs[gpsLogs.length - 1].latitude.toFixed(6)},
-                      {gpsLogs[gpsLogs.length - 1].longitude.toFixed(6)}
-                    </p>
-                  </div>
-                ) : (
-                  <p className="text-xs text-muted-foreground">
-                    No GPS points recorded
-                  </p>
-                )}
-              </div>
+              <Map
+                mapboxAccessToken={import.meta.env.VITE_MAPBOX_ACCESS_TOKEN}
+                initialViewState={{
+                  longitude: 106.7787403,
+                  latitude: 10.8260282,
+                  zoom: DEFAULT_MAP_ZOOM,
+                }}
+                ref={mapRef}
+                style={{ width: "100%", height: "100%" }}
+                mapStyle={
+                  "mapbox://styles/gioimtg2003/cly3bplv3007k01qp87hradf3"
+                }
+                attributionControl={false}
+              />
             </div>
 
             <Button
