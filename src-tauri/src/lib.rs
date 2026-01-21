@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use mavlink::common::{MavMessage, REQUEST_DATA_STREAM_DATA};
+use mavlink::common::{MavCmd, MavMessage, COMMAND_LONG_DATA, REQUEST_DATA_STREAM_DATA};
 use std::time::Duration;
 use tauri::{Emitter, State, Window};
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
@@ -112,6 +112,21 @@ async fn start_telemetry_stream(
                         );
                     }
 
+                    MavMessage::COMMAND_ACK(data) => {
+                        let result_text = match data.result {
+                            mavlink::common::MavResult::MAV_RESULT_ACCEPTED => "Thành công!",
+                            mavlink::common::MavResult::MAV_RESULT_TEMPORARILY_REJECTED => {
+                                "Bị từ chối (Chưa nhấn nút Safety/Chưa Arm)"
+                            }
+                            mavlink::common::MavResult::MAV_RESULT_UNSUPPORTED => {
+                                "Drone không hỗ trợ lệnh này"
+                            }
+                            _ => "Lỗi không xác định",
+                        };
+                        println!("[LỆNH] Kết quả Test Motor: {:?}", result_text);
+                        let _ = window.emit("command-feedback", result_text);
+                    }
+
                     _ => {}
                 }
             }
@@ -188,6 +203,74 @@ fn get_port_available() -> Vec<String> {
     }
 }
 
+#[tauri::command]
+async fn test_motor(
+    motor_index: f32,
+    throttle: f32,
+    duration: f32,
+    state: State<'_, DroneConnection>,
+) -> Result<String, String> {
+    let lock = state.0.lock().unwrap();
+
+    if let Some(ref conn) = *lock {
+        let header = mavlink::MavHeader::default();
+
+        let msg = MavMessage::COMMAND_LONG(COMMAND_LONG_DATA {
+            target_system: 1,
+            target_component: 0,
+            command: MavCmd::MAV_CMD_DO_MOTOR_TEST,
+            confirmation: 0,
+            param1: motor_index, // Motor index
+            param2: 0.0,
+            param3: throttle, // Throttle value (20)
+            param4: duration,
+            param5: 0.0,
+            param6: 0.0,
+            param7: 0.0,
+        });
+
+        let _ = conn.send(&header, &msg);
+        Ok(format!(
+            "Đang test Motor {} ở mức {}% trong {}s",
+            motor_index, throttle, duration
+        ))
+    } else {
+        Err("Chưa kết nối Drone!".into())
+    }
+}
+
+#[tauri::command]
+async fn test_all_motors(
+    throttle: f32,
+    duration_per_motor: f32,
+    state: State<'_, DroneConnection>,
+) -> Result<String, String> {
+    let lock = state.0.lock().unwrap();
+
+    if let Some(ref conn) = *lock {
+        let header = mavlink::MavHeader::default();
+        for index in 1..=4 {
+            let msg = MavMessage::COMMAND_LONG(mavlink::common::COMMAND_LONG_DATA {
+                target_system: 1,
+                target_component: 1,
+                command: mavlink::common::MavCmd::MAV_CMD_DO_MOTOR_TEST,
+                param1: index as f32,
+                param2: 0.0,
+                param3: throttle,
+                param4: duration_per_motor,
+                param5: 0.0,
+                param6: 2.0,
+                ..Default::default()
+            });
+            let _ = conn.send(&header, &msg);
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        Ok("Đã gửi lệnh quay 4 motor liên tiếp".into())
+    } else {
+        Err("Drone chưa kết nối".into())
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -198,7 +281,9 @@ pub fn run() {
             get_port_available,
             connect_to_drone,
             disconnect_drone,
-            start_telemetry_stream
+            start_telemetry_stream,
+            test_motor,
+            test_all_motors
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -55,6 +55,7 @@ export default function Home() {
       });
 
       unlistenGPS = await listen("gps-data", (event: any) => {
+        console.log(event.payload);
         const { lat, lon, sats } = event.payload;
         if (isLogging) {
           addGPSLog(lat, lon, sats);

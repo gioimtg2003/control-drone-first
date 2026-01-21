@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { invoke } from "@tauri-apps/api/core";
 
 interface MotorControlPanelProps {
   isConnected: boolean;
@@ -22,13 +23,32 @@ export default function MotorControlPanel({
   ];
 
   const handleTestMotor = async (motorId: string) => {
-    setActiveTest(motorId);
-    setTimeout(() => setActiveTest(null), testDuration * 1000);
-  };
+    try {
+      setActiveTest(motorId);
 
-  const handleTestAll = () => {
+      const motorIndex = parseInt(motorId.replace("motor", ""));
+
+      await invoke("test_motor", {
+        motorIndex: motorIndex,
+        throttle: motorThrottle,
+        duration: testDuration,
+      });
+
+      setTimeout(() => setActiveTest(null), testDuration * 1000);
+    } catch (error) {
+      console.error("Motor test failed:", error);
+      alert("Lỗi khi test motor: " + error);
+      setActiveTest(null);
+    }
+  };
+  const handleTestAll = async () => {
     setActiveTest("all");
-    setTimeout(() => setActiveTest(null), testDuration * 1000);
+
+    await invoke("test_all_motors", {
+      throttle: motorThrottle,
+      durationPerMotor: testDuration,
+    });
+    setActiveTest(null);
   };
 
   return (

@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import "mapbox-gl/dist/mapbox-gl.css";
-import Map, { MapRef } from "react-map-gl/mapbox";
+import Map, { MapRef, Marker } from "react-map-gl/mapbox";
 
 interface GPSLog {
   id: number;
@@ -165,7 +165,7 @@ export default function GPSLoggerDisplay({
                   "mapbox://styles/gioimtg2003/cly3bplv3007k01qp87hradf3"
                 }
                 attributionControl={false}
-              />
+              ></Map>
             </div>
 
             <Button
